@@ -1,2 +1,2 @@
 # ComicSpider
-Some web spider to download comics
+Some web spiders to download comics
