@@ -13,7 +13,7 @@ from selenium import webdriver
 
 
 N_PRODUCER = 5
-N_CUSTOMER = 15
+N_CUSTOMER = 18
 N_JOB_QUEUE_SIZE = 200
 
 
@@ -45,9 +45,11 @@ class UrlDownloader(object):
         except UnicodeEncodeError as code_error:
             DebugPrint(code_error)
             DebugPrint('Error URL: {}'.format(self._url))
-            DebugPrint('Try to standardize url.')
+            DebugPrint('Trying to standardize url.')
 
             new_url = self._StandardizeUrl(self._url)
+            DebugPrint('Standardized URL: {}'.format(new_url))
+
             request = urllib.request.Request(url=new_url, headers=header, method='GET')
             try:
                 response = urllib.request.urlopen(request)
