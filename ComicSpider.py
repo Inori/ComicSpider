@@ -3,6 +3,7 @@
 
 import threading
 import urllib.request
+import requests
 import urllib.parse
 import urllib.error
 import re
@@ -10,11 +11,18 @@ import os
 import queue
 from bs4 import BeautifulSoup
 from selenium import webdriver
-
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from PIL import Image
+from io import BytesIO
 
 N_PRODUCER = 5
 N_CUSTOMER = 18
 N_JOB_QUEUE_SIZE = 200
+
+
+CHROME_DRIVER_PATH = './chromedriver'
 
 
 def DebugPrint(log):
@@ -31,6 +39,7 @@ class UrlDownloader(object):
         self._url = url
 
     def GetRawData(self):
+        ''''''
         header = {
             'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/66.0.3359.181 Safari/537.36'
         }
@@ -73,13 +82,15 @@ class UrlDownloader(object):
     def GetHtmlByChrome(self):
         options = webdriver.ChromeOptions()
         options.headless = True
-        browser = webdriver.Chrome('./chromedriver', options = options)
+        browser = webdriver.Chrome(CHROME_DRIVER_PATH, options = options)
         html = ''
         try:
             browser.get(self._url)
             html = browser.page_source
         except Exception as e:
             DebugPrint(e)
+        finally:
+            browser.quit()
         return html
 
 
@@ -147,11 +158,12 @@ class DownloadJob(object):
         with open(self._filename, 'wb') as dst:
             dst.write(raw)
 
+        self._OutputLog()
+
+    def _OutputLog(self):
         title = os.path.basename(os.path.dirname(self._filename))
         name = os.path.basename(self._filename)
-        DebugPrint('Downloading: {} -> {}'.format(title, name))
-
-
+        DebugPrint('Downloaded: {} -> {}'.format(title, name))
 
 
 #producer
@@ -188,7 +200,8 @@ class BaseSpider(threading.Thread):
                 ext_name = self._GetFileExtFromUrl(img_url)
                 filename = '{:04d}{}'.format(idx, ext_name)
                 fullname = os.path.join(dir_name, filename)
-                job = DownloadJob(img_url, fullname)
+
+                job = self._MakeJob(fullname, img_url)
                 self._job_queue.put(job)
 
             self._entry_queue.task_done()
@@ -211,6 +224,8 @@ class BaseSpider(threading.Thread):
     def _GetImageUrl(self, page_url):
         raise Exception('pure virtual method')
 
+    def _MakeJob(self, filename, url):
+        raise Exception('pure virtual method')
 
 
 
@@ -315,8 +330,51 @@ class KukuSpider(BaseSpider):
         return url
 
 
+    def _MakeJob(self, filename, url):
+        return DownloadJob(url, filename)
+
+
 
 class ManhuaguiSpider(BaseSpider):
+
+    class ManhuaguiDownloadJob(DownloadJob):
+
+        def __init__(self, url, filename):
+            super().__init__(url, filename)
+
+        def Download(self):
+            options = webdriver.ChromeOptions()
+            options.headless = True
+            browser = webdriver.Chrome(CHROME_DRIVER_PATH, options=options)
+
+            try:
+                browser.get(self._url)
+                img = WebDriverWait(browser, 30).until(EC.presence_of_element_located((By.ID, "mangaFile")))
+                self._SavePngFile(browser, img.location, img.size)
+            except Exception as e:
+                DebugPrint(e)
+            finally:
+                browser.quit()
+
+
+        def _SavePngFile(self, browser, location, size):
+            width = browser.execute_script("return Math.max(document.body.scrollWidth, document.body.offsetWidth, document.documentElement.clientWidth, document.documentElement.scrollWidth, document.documentElement.offsetWidth);")
+            height = browser.execute_script("return Math.max(document.body.scrollHeight, document.body.offsetHeight, document.documentElement.clientHeight, document.documentElement.scrollHeight, document.documentElement.offsetHeight);")
+            browser.set_window_size(width, height)
+
+            png_data = browser.get_screenshot_as_png()
+            img = Image.open(BytesIO(png_data))
+
+            left = location['x']
+            top = location['y']
+            right = location['x'] + size['width']
+            bottom = location['y'] + size['height']
+
+            img = img.crop((left, top, right, bottom))
+            img.save(self._filename)
+
+            self._OutputLog()
+
 
     def __init__(self, entry_queue, job_queue, root_dir):
         super().__init__(entry_queue, job_queue, root_dir)
@@ -377,17 +435,24 @@ class ManhuaguiSpider(BaseSpider):
         return url_list
 
     def _GetFileExtFromUrl(self, img_url):
-        return '.webp'
+        return '.png'
 
     def _GetImageUrl(self, page_url):
-        # html = UrlDownloader(page_url).GetHtml()
-        html = UrlDownloader(page_url).GetHtmlByChrome()
-        soup = BeautifulSoup(html, 'html.parser')
-        img = soup.select('#mangaFile')[0]
-        if not img:
-            return ''
-        img_url = img.get('src')
-        return img_url
+        # html = UrlDownloader(page_url).GetHtmlByChrome()
+        # soup = BeautifulSoup(html, 'html.parse')
+        # img = soup.select('#mangaFile')
+        # if not img:
+        #     DebugPrint('Find img tag failed: {}'.format(page_url))
+        #     return ''
+        #
+        # img_url = img[0].get('src')
+        # return img_url
+        return page_url
+
+
+
+    def _MakeJob(self, filename, url):
+        return self.ManhuaguiDownloadJob(url, filename)
 
 
 
@@ -479,6 +544,17 @@ def main():
     # url = 'http://comic.kukudm.com/comiclist/2274/index.htm'
     # manager = SpiderManager(KukuSpider, url, '/home/asuka/local/comic')
     # manager.Process()
+
+    # head = {
+    #     'Cache-Control': 'max-age=0',
+    #     'DNT': '1',
+    #     'Referer': 'https://www.manhuagui.com/comic/14857/214050.html',
+    #     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/64.0.3282.140 Safari/537.36 Edge/17.17134',
+    # }
+    # url = r'https://i.hamreus.com/ps1/c/cudianxinzhanzheng/第72回/20151109171322_206%20%E6%8B%B7%E8%B4%9D.jpg.webp?cid=214050&md5=SONGL2a6TZstUZz1QKJzMA'
+    # req = requests.get(url, headers=head)
+    # f = open('test.jpg', 'wb')
+    # f.write(req.content)
 
     url = 'https://www.manhuagui.com/comic/14857/'
     manager = SpiderManager(ManhuaguiSpider, url, '/home/asuka/local/comic')
