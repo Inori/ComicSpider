@@ -185,10 +185,10 @@ class BaseSpider(threading.Thread):
 
                 DebugPrint('Add url to queue: {}'.format(img_url))
 
-                _, ext_name = os.path.splitext(img_url)
-                idx_str = '{:04d}'.format(idx) + ext_name
-                filename = os.path.join(dir_name, idx_str)
-                job = DownloadJob(img_url, filename)
+                ext_name = self._GetFileExtFromUrl(img_url)
+                filename = '{:04d}{}'.format(idx, ext_name)
+                fullname = os.path.join(dir_name, filename)
+                job = DownloadJob(img_url, fullname)
                 self._job_queue.put(job)
 
             self._entry_queue.task_done()
@@ -202,6 +202,10 @@ class BaseSpider(threading.Thread):
         raise Exception('pure virtual method')
 
     def _GetPageUrlList(self, first_url, page_count):
+        raise Exception('pure virtual method')
+
+    #include dot, eg. '.jpg'
+    def _GetFileExtFromUrl(self, img_url):
         raise Exception('pure virtual method')
 
     def _GetImageUrl(self, page_url):
@@ -282,6 +286,11 @@ class KukuSpider(BaseSpider):
     #     DebugPrint('Can not found proper img, page url: {}'.format(page_url))
     #     return ''
 
+    def _GetFileExtFromUrl(self, img_url):
+        _, ext_name = os.path.splitext(img_url)
+        return ext_name
+
+
     def _GetImageUrl(self, page_url):
         html = UrlDownloader(page_url).GetHtml()
         # html = UrlDownloader(page_url).GetHtmlByChrome()
@@ -336,7 +345,7 @@ class ManhuaguiSpider(BaseSpider):
 
 
     def _GetEntryNameAndPageCount(self, first_url):
-        html = UrlDownloader('https://www.manhuagui.com/comic/14857/226878.html').GetHtml()
+        html = UrlDownloader(first_url).GetHtml()
         soup = BeautifulSoup(html, 'html.parser')
 
         a_title = soup.select('body > div.w980.title > div:nth-of-type(2) > h1 > a')[0]
@@ -363,12 +372,24 @@ class ManhuaguiSpider(BaseSpider):
     def _GetPageUrlList(self, first_url, page_count):
         url_list = []
         for i in range(1, page_count + 1):
-            url = '{}#p='.format(first_url, i)
+            url = '{}#p={}'.format(first_url, i)
             url_list.append(url)
         return url_list
 
+    def _GetFileExtFromUrl(self, img_url):
+        return '.webp'
+
     def _GetImageUrl(self, page_url):
-        raise Exception('pure virtual method')
+        # html = UrlDownloader(page_url).GetHtml()
+        html = UrlDownloader(page_url).GetHtmlByChrome()
+        soup = BeautifulSoup(html, 'html.parser')
+        img = soup.select('#mangaFile')[0]
+        if not img:
+            return ''
+        img_url = img.get('src')
+        return img_url
+
+
 
 class HanhanSpider(BaseSpider):
     pass
@@ -453,10 +474,6 @@ class SpiderManager(object):
 
 
 def main():
-
-
-
-
 
 
     # url = 'http://comic.kukudm.com/comiclist/2274/index.htm'
