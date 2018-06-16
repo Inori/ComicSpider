@@ -3,7 +3,6 @@
 
 import threading
 import urllib.request
-import requests
 import urllib.parse
 import urllib.error
 import re
@@ -17,12 +16,14 @@ from selenium.webdriver.support import expected_conditions as EC
 from PIL import Image
 from io import BytesIO
 
-N_PRODUCER = 5
-N_CUSTOMER = 18
-N_JOB_QUEUE_SIZE = 200
+N_PRODUCER = 3
+N_CUSTOMER = 5
+N_JOB_QUEUE_SIZE = 5
 
 
 CHROME_DRIVER_PATH = './chromedriver'
+FIREFOX_DRIVER_PATH = './geckodriver'
+FIREFOX_BIN_PATH = '/home/asuka/local/software/firefox/firefox'
 
 
 def DebugPrint(log):
@@ -66,6 +67,11 @@ class UrlDownloader(object):
                 DebugPrint(e)
                 DebugPrint('Error URL after standardize:{}'.format(new_url))
                 return None
+        except Exception as e:
+            DebugPrint(e)
+            DebugPrint('Error URL: {}'.format(self._url))
+            return None
+
         return response.read()
 
 
@@ -342,29 +348,69 @@ class ManhuaguiSpider(BaseSpider):
         def __init__(self, url, filename):
             super().__init__(url, filename)
 
+            # self._CreateChromeBrowser()
+            self._CreateFirefoxBrowser()
+
+
+        def __del__(self):
+            self._browser.quit()
+
+
         def Download(self):
-            options = webdriver.ChromeOptions()
-            options.headless = True
-            browser = webdriver.Chrome(CHROME_DRIVER_PATH, options=options)
 
             try:
-                browser.get(self._url)
-                img = WebDriverWait(browser, 30).until(EC.presence_of_element_located((By.ID, "mangaFile")))
-                self._SavePngFile(browser, img.location, img.size)
+                self._browser.get(self._url)
+                img = WebDriverWait(self._browser, 30).until(EC.presence_of_element_located((By.ID, "mangaFile")))
+                self._SavePngFile(img)
             except Exception as e:
                 DebugPrint(e)
             finally:
-                browser.quit()
+                self._browser.close()
 
 
-        def _SavePngFile(self, browser, location, size):
-            width = browser.execute_script("return Math.max(document.body.scrollWidth, document.body.offsetWidth, document.documentElement.clientWidth, document.documentElement.scrollWidth, document.documentElement.offsetWidth);")
-            height = browser.execute_script("return Math.max(document.body.scrollHeight, document.body.offsetHeight, document.documentElement.clientHeight, document.documentElement.scrollHeight, document.documentElement.offsetHeight);")
-            browser.set_window_size(width, height)
+        def _CreateChromeBrowser(self):
+            options = webdriver.ChromeOptions()
+            options.headless = True
 
-            png_data = browser.get_screenshot_as_png()
+            for i in range(0, 5):
+                try:
+                    self._browser = webdriver.Chrome(CHROME_DRIVER_PATH, options=options)
+                    if self._browser:
+                        break
+                except Exception as e:
+                    DebugPrint(e)
+
+
+        def _CreateFirefoxBrowser(self):
+            options = webdriver.FirefoxOptions()
+            options.headless = True
+
+            for i in range(0, 5):
+                try:
+                    self._browser = webdriver.Firefox(firefox_binary=FIREFOX_BIN_PATH,
+                                                      executable_path=FIREFOX_DRIVER_PATH,
+                                                      options=options)
+                    if self._browser:
+                        break
+                except Exception as e:
+                    DebugPrint(e)
+
+
+        def _SavePngFile(self, img_element):
+            # self._SaveByChrome(img_element)
+            self._SaveByFirefox(img_element)
+
+
+        def _SaveByChrome(self, img_element):
+            width = self._browser.execute_script("return Math.max(document.body.scrollWidth, document.body.offsetWidth, document.documentElement.clientWidth, document.documentElement.scrollWidth, document.documentElement.offsetWidth);")
+            height = self._browser.execute_script("return Math.max(document.body.scrollHeight, document.body.offsetHeight, document.documentElement.clientHeight, document.documentElement.scrollHeight, document.documentElement.offsetHeight);")
+            self._browser.set_window_size(width, height)
+
+            png_data = self._browser.get_screenshot_as_png()
             img = Image.open(BytesIO(png_data))
 
+            location = img_element.location
+            size = img_element.size
             left = location['x']
             top = location['y']
             right = location['x'] + size['width']
@@ -373,6 +419,12 @@ class ManhuaguiSpider(BaseSpider):
             img = img.crop((left, top, right, bottom))
             img.save(self._filename)
 
+            self._OutputLog()
+
+
+        def _SaveByFirefox(self, img_element):
+
+            img_element.screenshot(self._filename)
             self._OutputLog()
 
 
@@ -557,7 +609,7 @@ def main():
     # f.write(req.content)
 
     url = 'https://www.manhuagui.com/comic/14857/'
-    manager = SpiderManager(ManhuaguiSpider, url, '/home/asuka/local/comic')
+    manager = SpiderManager(ManhuaguiSpider, url, '/home/asuka/local/comic/CuDianXin')
     manager.Process()
 
 
