@@ -157,16 +157,16 @@ class DownloadJob(object):
 #producer
 class BaseSpider(threading.Thread):
 
-    def __init__(self, entries_queue, job_queue, root_dir):
+    def __init__(self, entry_queue, job_queue, root_dir):
         super().__init__()
-        self._entries_queue = entries_queue
+        self._entry_queue = entry_queue
         self._job_queue = job_queue
         self._root_dir = root_dir
 
 
     def run(self):
         while True:
-            entry_url = self._entries_queue.get()
+            entry_url = self._entry_queue.get()
 
             if entry_url == StopToken:
                 break
@@ -191,7 +191,7 @@ class BaseSpider(threading.Thread):
                 job = DownloadJob(img_url, filename)
                 self._job_queue.put(job)
 
-            self._entries_queue.task_done()
+            self._entry_queue.task_done()
 
 
     @staticmethod
@@ -212,8 +212,8 @@ class BaseSpider(threading.Thread):
 
 class KukuSpider(BaseSpider):
 
-    def __init__(self, entries_queue, job_queue, root_dir):
-        super().__init__(entries_queue, job_queue, root_dir)
+    def __init__(self, entry_queue, job_queue, root_dir):
+        super().__init__(entry_queue, job_queue, root_dir)
 
 
     @staticmethod
@@ -306,20 +306,72 @@ class KukuSpider(BaseSpider):
         return url
 
 
-class HanhanSpider(BaseSpider):
+
+class ManhuaguiSpider(BaseSpider):
+
+    def __init__(self, entry_queue, job_queue, root_dir):
+        super().__init__(entry_queue, job_queue, root_dir)
 
     @staticmethod
     def GetEntryList(url):
-        raise Exception('pure virtual method')
+        html = UrlDownloader(url).GetHtml()
+        soup = BeautifulSoup(html, 'html.parser')
+        div_capt_list = soup.select('#chapter-list-1')[0]
+        if not div_capt_list:
+            div_capt_list = soup.select('#chapter-list-0')
+            if not div_capt_list:
+                return []
+
+
+        entry_list = []
+        ul_list = div_capt_list.find_all('ul')
+        for ul in ul_list:
+            a_list = ul.find_all('a', class_='status0')
+            for a in a_list:
+                path = a.get('href')
+                entry_url = urllib.parse.urljoin(url, path)
+                entry_list.append(entry_url)
+
+        return entry_list
+
 
     def _GetEntryNameAndPageCount(self, first_url):
-        raise Exception('pure virtual method')
+        html = UrlDownloader('https://www.manhuagui.com/comic/14857/226878.html').GetHtml()
+        soup = BeautifulSoup(html, 'html.parser')
+
+        a_title = soup.select('body > div.w980.title > div:nth-of-type(2) > h1 > a')[0]
+        title = a_title.text
+
+        h2_capt = soup.select('body > div.w980.title > div:nth-of-type(2) > h2')[0]
+        capt = h2_capt.text
+        entry_name = '{} {}'.format(title, capt)
+
+        span = soup.select('body > div.w980.title > div:nth-of-type(2) > span')[0]
+        span_text = span.text
+
+        pat = re.compile('\(/(\d+)\)')
+        s = pat.search(span_text)
+        if not s:
+            DebugPrint("Can not found page count element.")
+            return '', 0
+        count_text = s.group(1)
+        page_count = int(count_text)
+
+        return entry_name, page_count
+
 
     def _GetPageUrlList(self, first_url, page_count):
-        raise Exception('pure virtual method')
+        url_list = []
+        for i in range(1, page_count + 1):
+            url = '{}#p='.format(first_url, i)
+            url_list.append(url)
+        return url_list
 
     def _GetImageUrl(self, page_url):
         raise Exception('pure virtual method')
+
+class HanhanSpider(BaseSpider):
+    pass
 
 
 
@@ -355,18 +407,21 @@ class SpiderManager(object):
     def Process(self):
 
         entry_list = self._spider.GetEntryList(self._url)
+        if not entry_list:
+            DebugPrint('Get entry list failed.')
+            return
 
         job_queue = queue.Queue(N_JOB_QUEUE_SIZE)
-        entries_queue = queue.Queue(len(entry_list))
+        entry_queue = queue.Queue(len(entry_list))
 
 
         for entry in entry_list:
-            entries_queue.put(entry)
+            entry_queue.put(entry)
 
 
         producer_list = []
         for i in range(0, N_PRODUCER):
-            t = self._spider(entries_queue, job_queue, self._root_dir)
+            t = self._spider(entry_queue, job_queue, self._root_dir)
             t.start()
             producer_list.append(t)
 
@@ -377,9 +432,9 @@ class SpiderManager(object):
             t.start()
             customer_list.append(t)
 
-        entries_queue.join()
+        entry_queue.join()
         for i in range(0, N_PRODUCER):
-            entries_queue.put(StopToken)
+            entry_queue.put(StopToken)
 
         for t in producer_list:
             t.join()
@@ -399,11 +454,17 @@ class SpiderManager(object):
 
 def main():
 
-    d = UrlDownloader('')
-    d._StandardizeUrl('http://n5.1whour.com/kuku8comic8/201105/20110531/话话话话/Comic.kukudm.com_1603G.jpg')
 
-    url = 'http://comic.kukudm.com/comiclist/711/index.htm'
-    manager = SpiderManager(KukuSpider, url, '/home/asuka/local/comic')
+
+
+
+
+    # url = 'http://comic.kukudm.com/comiclist/2274/index.htm'
+    # manager = SpiderManager(KukuSpider, url, '/home/asuka/local/comic')
+    # manager.Process()
+
+    url = 'https://www.manhuagui.com/comic/14857/'
+    manager = SpiderManager(ManhuaguiSpider, url, '/home/asuka/local/comic')
     manager.Process()
 
 
