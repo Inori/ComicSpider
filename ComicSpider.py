@@ -17,8 +17,8 @@ from PIL import Image
 from io import BytesIO
 
 N_PRODUCER = 3
-N_CUSTOMER = 5
-N_JOB_QUEUE_SIZE = 5
+N_CUSTOMER = 8
+N_JOB_QUEUE_SIZE = 50
 
 
 CHROME_DRIVER_PATH = './chromedriver'
@@ -348,15 +348,11 @@ class ManhuaguiSpider(BaseSpider):
         def __init__(self, url, filename):
             super().__init__(url, filename)
 
-            # self._CreateChromeBrowser()
-            self._CreateFirefoxBrowser()
-
-
-        def __del__(self):
-            self._browser.quit()
-
 
         def Download(self):
+
+            self._CreateChromeBrowser()
+            # self._CreateFirefoxBrowser()
 
             try:
                 self._browser.get(self._url)
@@ -366,6 +362,8 @@ class ManhuaguiSpider(BaseSpider):
                 DebugPrint(e)
             finally:
                 self._browser.close()
+
+            self._DestoryBrowser()
 
 
         def _CreateChromeBrowser(self):
@@ -395,10 +393,15 @@ class ManhuaguiSpider(BaseSpider):
                 except Exception as e:
                     DebugPrint(e)
 
+        def _DestoryBrowser(self):
+            if not self._browser:
+                return
+            self._browser.quit()
+
 
         def _SavePngFile(self, img_element):
-            # self._SaveByChrome(img_element)
-            self._SaveByFirefox(img_element)
+            self._SaveByChrome(img_element)
+            # self._SaveByFirefox(img_element)
 
 
         def _SaveByChrome(self, img_element):
