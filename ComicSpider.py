@@ -13,11 +13,12 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+import selenium.common.exceptions as selenium_exception
 from PIL import Image
 from io import BytesIO
 
-N_PRODUCER = 3
-N_CUSTOMER = 8
+N_PRODUCER = 2
+N_CUSTOMER = 3
 N_JOB_QUEUE_SIZE = 50
 
 
@@ -153,23 +154,27 @@ class DownloadJob(object):
     def Download(self):
         if not self._url:
             DebugPrint('Got null url')
+            self._LogResult(False)
             return
 
         downloader = UrlDownloader(self._url)
         raw = downloader.GetRawData()
         if not raw:
-            DebugPrint('Download failed: {}'.format(self._filename))
+            self._LogResult(False)
             return
 
         with open(self._filename, 'wb') as dst:
             dst.write(raw)
 
-        self._OutputLog()
+        self._LogResult()
 
-    def _OutputLog(self):
+    def _LogResult(self, result=True):
         title = os.path.basename(os.path.dirname(self._filename))
         name = os.path.basename(self._filename)
-        DebugPrint('Downloaded: {} -> {}'.format(title, name))
+        if result == True:
+            DebugPrint('Downloaded: {} -> {}'.format(title, name))
+        else:
+            DebugPrint('Failed to download: {} -> {} URL: {}'.format(title, name, self._url))
 
 
 #producer
@@ -345,23 +350,40 @@ class ManhuaguiSpider(BaseSpider):
 
     class ManhuaguiDownloadJob(DownloadJob):
 
+        WAIT_IMG_TIMEOUT = 60
+        BROWSER_DRIVER_CHROME = 'chrome'
+        BROWSER_DRIVER_FIREFOX = 'firefox'
+        USING_BROWSER_DRIVER = BROWSER_DRIVER_CHROME
+
         def __init__(self, url, filename):
             super().__init__(url, filename)
 
 
         def Download(self):
 
+
+
             DebugPrint('Downloading URL: {}'.format(self._url))
 
-            self._CreateChromeBrowser()
-            # self._CreateFirefoxBrowser()
+            if self.USING_BROWSER_DRIVER == self.BROWSER_DRIVER_CHROME:
+                self._CreateChromeBrowser()
+            elif self.USING_BROWSER_DRIVER == self.BROWSER_DRIVER_FIREFOX:
+                self._CreateFirefoxBrowser()
+            else:
+                DebugPrint('Error: No such browser driver')
+                return
 
             try:
                 self._browser.get(self._url)
-                img = WebDriverWait(self._browser, 30).until(EC.presence_of_element_located((By.ID, "mangaFile")))
+                try:
+                    img = self._browser.find_element_by_id('mangaFile')
+                except selenium_exception.NoSuchElementException as e:
+                    DebugPrint('Failed to find img element: {}'.format(e))
+                    DebugPrint('Try to wait for img element')
+                    img = WebDriverWait(self._browser, self.WAIT_IMG_TIMEOUT).until(EC.visibility_of_element_located((By.ID, "mangaFile")))
                 self._SavePngFile(img)
             except Exception as e:
-                DebugPrint(e)
+                DebugPrint('Error while loading page: {}'.format(e))
             finally:
                 self._browser.close()
 
@@ -399,12 +421,29 @@ class ManhuaguiSpider(BaseSpider):
         def _DestoryBrowser(self):
             if not self._browser:
                 return
-            self._browser.quit()
+            try:
+                self._browser.quit()
+            except Exception as e:
+                DebugPrint('Quit browser failed: {}'.format(e))
+                try:
+                    self._browser.close()
+                except Exception as e:
+                    DebugPrint('Close browser failed: {}'.format(e))
+
 
 
         def _SavePngFile(self, img_element):
-            self._SaveByChrome(img_element)
-            # self._SaveByFirefox(img_element)
+            if not img_element:
+                self._LogResult(False)
+                return
+
+            if self.USING_BROWSER_DRIVER == self.BROWSER_DRIVER_CHROME:
+                self._SaveByChrome(img_element)
+            elif self.USING_BROWSER_DRIVER == self.BROWSER_DRIVER_FIREFOX:
+                self._SaveByFirefox(img_element)
+            else:
+                DebugPrint('Error: No such browser driver')
+
 
 
         def _SaveByChrome(self, img_element):
@@ -425,13 +464,13 @@ class ManhuaguiSpider(BaseSpider):
             img = img.crop((left, top, right, bottom))
             img.save(self._filename)
 
-            self._OutputLog()
+            self._LogResult()
 
 
         def _SaveByFirefox(self, img_element):
 
             img_element.screenshot(self._filename)
-            self._OutputLog()
+            self._LogResult()
 
 
     def __init__(self, entry_queue, job_queue, root_dir):
