@@ -351,6 +351,8 @@ class ManhuaguiSpider(BaseSpider):
 
         def Download(self):
 
+            DebugPrint('Downloading URL: {}'.format(self._url))
+
             self._CreateChromeBrowser()
             # self._CreateFirefoxBrowser()
 
@@ -374,7 +376,7 @@ class ManhuaguiSpider(BaseSpider):
                 try:
                     self._browser = webdriver.Chrome(CHROME_DRIVER_PATH, options=options)
                     if self._browser:
-                        # self._browser.set_page_load_timeout(60)
+                        self._browser.set_page_load_timeout(60)
                         break
                 except Exception as e:
                     DebugPrint(e)
@@ -439,7 +441,7 @@ class ManhuaguiSpider(BaseSpider):
     def GetEntryList(url):
         html = UrlDownloader(url).GetHtml()
         soup = BeautifulSoup(html, 'html.parser')
-        
+
         div_capt_list = soup.select('#chapter-list-1')
         if not div_capt_list:
             div_capt_list = soup.select('#chapter-list-0')
@@ -496,6 +498,10 @@ class ManhuaguiSpider(BaseSpider):
     def _GetFileExtFromUrl(self, img_url):
         return '.png'
 
+
+    # requires 'Referer' field in http header to download image
+    # here we return page url (not image url) to download the entire page
+    # using web browser driver later
     def _GetImageUrl(self, page_url):
         # html = UrlDownloader(page_url).GetHtmlByChrome()
         # soup = BeautifulSoup(html, 'html.parse')
