@@ -374,6 +374,7 @@ class ManhuaguiSpider(BaseSpider):
                 try:
                     self._browser = webdriver.Chrome(CHROME_DRIVER_PATH, options=options)
                     if self._browser:
+                        # self._browser.set_page_load_timeout(60)
                         break
                 except Exception as e:
                     DebugPrint(e)
@@ -438,12 +439,15 @@ class ManhuaguiSpider(BaseSpider):
     def GetEntryList(url):
         html = UrlDownloader(url).GetHtml()
         soup = BeautifulSoup(html, 'html.parser')
-        div_capt_list = soup.select('#chapter-list-1')[0]
+        
+        div_capt_list = soup.select('#chapter-list-1')
         if not div_capt_list:
             div_capt_list = soup.select('#chapter-list-0')
             if not div_capt_list:
                 return []
 
+        if div_capt_list:
+            div_capt_list = div_capt_list[0]
 
         entry_list = []
         ul_list = div_capt_list.find_all('ul')
@@ -600,19 +604,10 @@ def main():
     # manager = SpiderManager(KukuSpider, url, '/home/asuka/local/comic')
     # manager.Process()
 
-    # head = {
-    #     'Cache-Control': 'max-age=0',
-    #     'DNT': '1',
-    #     'Referer': 'https://www.manhuagui.com/comic/14857/214050.html',
-    #     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/64.0.3282.140 Safari/537.36 Edge/17.17134',
-    # }
-    # url = r'https://i.hamreus.com/ps1/c/cudianxinzhanzheng/第72回/20151109171322_206%20%E6%8B%B7%E8%B4%9D.jpg.webp?cid=214050&md5=SONGL2a6TZstUZz1QKJzMA'
-    # req = requests.get(url, headers=head)
-    # f = open('test.jpg', 'wb')
-    # f.write(req.content)
 
-    url = 'https://www.manhuagui.com/comic/14857/'
-    manager = SpiderManager(ManhuaguiSpider, url, '/home/asuka/local/comic/CuDianXin')
+    # url = 'https://www.manhuagui.com/comic/14857/'
+    url = 'https://www.manhuagui.com/comic/17473/'
+    manager = SpiderManager(ManhuaguiSpider, url, '/home/asuka/local/comic/Gabriel')
     manager.Process()
 
 
